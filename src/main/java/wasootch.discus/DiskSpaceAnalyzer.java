@@ -35,7 +35,6 @@ public class DiskSpaceAnalyzer extends JFrame {
         createUI();
 
         // Populate tree with the system drive on startup
-//        SwingUtilities.invokeLater(this::scanDirectory);
         populateRoot(systemDrive());
     }
 
