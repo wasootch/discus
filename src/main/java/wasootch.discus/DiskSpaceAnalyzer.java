@@ -1,13 +1,37 @@
 package wasootch.discus;
 
-import javax.swing.*;
-import javax.swing.tree.*;
-import java.awt.*;
-import java.awt.event.*;
+import javax.swing.AbstractAction;
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JComponent;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.JTextField;
+import javax.swing.JTree;
+import javax.swing.KeyStroke;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.tree.DefaultTreeModel;
+import javax.swing.tree.TreePath;
+import java.awt.BorderLayout;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.event.ActionEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.*;
-import java.util.concurrent.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.Stream;
 
 /**
@@ -296,7 +320,7 @@ public class DiskSpaceAnalyzer extends JFrame {
         }
     }
 
-    static void main(String[] args) {
+    static void main(String[] ignoredArgs) {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -311,66 +335,5 @@ public class DiskSpaceAnalyzer extends JFrame {
     public void dispose() {
         executor.shutdown();
         super.dispose();
-    }
-
-    static class DirectoryNode extends DefaultMutableTreeNode {
-        private final Path path;
-        private long size;
-        private int fileCount;
-        private int directoryCount;
-
-        DirectoryNode(Path path) {
-            super(path.getFileName() != null ? path.getFileName().toString() : path.toString());
-            this.path = path;
-        }
-
-        void addSize(long delta) { this.size += delta; }
-        void addFile() { fileCount++; }
-
-        public void add(DirectoryNode child) {
-            super.add(child);
-            directoryCount++;
-        }
-
-        long getSize() { return size; }
-        int getFileCount() { return fileCount; }
-        int getDirectoryCount() { return directoryCount; }
-        Path getFilePath() { return path; }
-
-        @Override
-        public String toString() {
-            String name = path.getFileName() != null ? path.getFileName().toString() : path.toString();
-            return name + " (" + DiskSpaceAnalyzer.formatSize(size) + ")";
-        }
-    }
-
-    static class SizeTreeCellRenderer extends DefaultTreeCellRenderer {
-        private Font boldFont;
-
-        @Override
-        public Component getTreeCellRendererComponent(JTree tree, Object value,
-                boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
-            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
-
-            if (value instanceof DirectoryNode node) {
-                Path path = node.getFilePath();
-                String name = path.getFileName() != null ? path.getFileName().toString() : path.toString();
-                setText(String.format("%s - %s [%d files, %d dirs]",
-                        name, formatSize(node.getSize()), node.getFileCount(), node.getDirectoryCount()));
-
-                if (boldFont == null) boldFont = getFont().deriveFont(Font.BOLD);
-                setFont(leaf ? getFont() : boldFont);
-
-                if (node.getSize() > 10L * 1024 * 1024 * 1024) {
-                    setForeground(new Color(200, 0, 0));
-                } else if (node.getSize() > 1024 * 1024 * 1024) {
-                    setForeground(new Color(200, 100, 0));
-                } else {
-                    setForeground(sel ? getTextSelectionColor() : getTextNonSelectionColor());
-                }
-            }
-
-            return this;
-        }
     }
 }
