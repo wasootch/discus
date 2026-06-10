@@ -18,8 +18,19 @@ class DirectoryNode extends DefaultMutableTreeNode {
 
     void addSize(long delta) { this.size += delta; }
     void addFile() { fileCount++; }
+    void addFiles(int count) { fileCount += count; }
+    void addDirs(int count) { directoryCount += count; }
     void markScanning() { scanning = true; }
     void markScanned() { scanned = true; scanning = false; }
+
+    void reset() {
+        size = 0;
+        fileCount = 0;
+        directoryCount = 0;
+        scanned = false;
+        scanning = false;
+        removeAllChildren();
+    }
 
     public void add(DirectoryNode child) {
         super.add(child);
@@ -38,6 +49,6 @@ class DirectoryNode extends DefaultMutableTreeNode {
         String name = path.getFileName() != null ? path.getFileName().toString() : path.toString();
         if (scanning) return name + " [scanning...]";
         if (!scanned) return name + " [not scanned]";
-        return name + " (" + DiskSpaceAnalyzer.formatSize(size) + ")";
+        return name + " (" + SizeFormatter.formatSize(size) + ")";
     }
 }

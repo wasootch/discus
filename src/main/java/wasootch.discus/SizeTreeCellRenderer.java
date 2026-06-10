@@ -7,7 +7,7 @@ import java.awt.Component;
 import java.awt.Font;
 import java.nio.file.Path;
 
-import static wasootch.discus.DiskSpaceAnalyzer.formatSize;
+import static wasootch.discus.SizeFormatter.formatSize;
 
 class SizeTreeCellRenderer extends DefaultTreeCellRenderer {
 

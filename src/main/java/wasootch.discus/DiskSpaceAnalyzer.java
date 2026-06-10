@@ -7,7 +7,9 @@ import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JPopupMenu;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
@@ -22,6 +24,8 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -70,14 +74,6 @@ public class DiskSpaceAnalyzer extends JFrame {
         return roots.length > 0 ? roots[0].getAbsolutePath() : "/";
     }
 
-    static String formatSize(long bytes) {
-        if (bytes < 1024) return bytes + " B";
-        if (bytes < 1024 * 1024) return String.format("%.2f KB", bytes / 1024.0);
-        if (bytes < 1024L * 1024 * 1024) return String.format("%.2f MB", bytes / (1024.0 * 1024));
-        if (bytes < 1024L * 1024 * 1024 * 1024) return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
-        return String.format("%.2f TB", bytes / (1024.0 * 1024 * 1024 * 1024));
-    }
-
     private void createUI() {
         JPanel topPanel = new JPanel(new BorderLayout(5, 5));
         topPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -113,6 +109,30 @@ public class DiskSpaceAnalyzer extends JFrame {
         tree.setRootVisible(true);
         tree.setShowsRootHandles(true);
         tree.addTreeSelectionListener(e -> updateSizeLabel());
+
+        JMenuItem scanFolderItem = new JMenuItem("Scan this folder");
+        scanFolderItem.addActionListener(e -> {
+            TreePath selected = tree.getSelectionPath();
+            if (selected != null && selected.getLastPathComponent() instanceof DirectoryNode node) {
+                rescanNode(node);
+            }
+        });
+        JPopupMenu contextMenu = new JPopupMenu();
+        contextMenu.add(scanFolderItem);
+
+        tree.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e)  { maybeShowPopup(e); }
+            @Override public void mouseReleased(MouseEvent e) { maybeShowPopup(e); }
+
+            private void maybeShowPopup(MouseEvent e) {
+                if (!e.isPopupTrigger()) return;
+                TreePath path = tree.getPathForLocation(e.getX(), e.getY());
+                if (path == null) return;
+                tree.setSelectionPath(path);
+                scanFolderItem.setEnabled(scanButton.isEnabled());
+                contextMenu.show(tree, e.getX(), e.getY());
+            }
+        });
 
         JScrollPane scrollPane = new JScrollPane(tree);
         scrollPane.setBorder(BorderFactory.createTitledBorder("Directory Tree"));
@@ -225,7 +245,7 @@ public class DiskSpaceAnalyzer extends JFrame {
                     cancelButton.setEnabled(false);
                     progressBar.setIndeterminate(false);
                     progressBar.setString("Complete");
-                    statusLabel.setText("Scan complete: " + formatSize(root.getSize()));
+                    statusLabel.setText("Scan complete: " + SizeFormatter.formatSize(root.getSize()));
                 });
             } catch (Exception e) {
                 if (Thread.currentThread().isInterrupted()) {
@@ -248,6 +268,75 @@ public class DiskSpaceAnalyzer extends JFrame {
         });
     }
 
+    private void rescanNode(DirectoryNode node) {
+        long oldSize = node.getSize();
+        int oldFileCount = node.getFileCount();
+        int oldDirCount = node.getDirectoryCount();
+
+        scanButton.setEnabled(false);
+        cancelButton.setEnabled(true);
+        progressBar.setIndeterminate(true);
+        progressBar.setString("Scanning...");
+        statusLabel.setText("Scanning: " + node.getFilePath());
+
+        node.reset();
+        node.markScanning();
+        treeModel.nodeStructureChanged(node);
+
+        scanFuture = executor.submit(() -> {
+            try {
+                scanDirectoryProgressive(node.getFilePath(), node);
+                if (Thread.currentThread().isInterrupted()) {
+                    SwingUtilities.invokeLater(() -> {
+                        resetScanUI();
+                        statusLabel.setText("Scan cancelled");
+                        progressBar.setString("Cancelled");
+                    });
+                    return;
+                }
+                long sizeDelta = node.getSize() - oldSize;
+                int fileCountDelta = node.getFileCount() - oldFileCount;
+                int dirCountDelta = node.getDirectoryCount() - oldDirCount;
+                SwingUtilities.invokeLater(() -> {
+                    propagateDelta(node, sizeDelta, fileCountDelta, dirCountDelta);
+                    updateSizeLabel();
+                    resetScanUI();
+                    progressBar.setString("Complete");
+                    statusLabel.setText("Scan complete: " + SizeFormatter.formatSize(node.getSize()));
+                });
+            } catch (Exception e) {
+                if (Thread.currentThread().isInterrupted()) {
+                    SwingUtilities.invokeLater(() -> {
+                        resetScanUI();
+                        statusLabel.setText("Scan cancelled");
+                        progressBar.setString("Cancelled");
+                    });
+                } else {
+                    SwingUtilities.invokeLater(() -> {
+                        JOptionPane.showMessageDialog(this,
+                                "Error scanning directory: " + e.getMessage(),
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                        resetScanUI();
+                        progressBar.setString("Error");
+                        statusLabel.setText("Scan failed");
+                    });
+                }
+            }
+        });
+    }
+
+    private void propagateDelta(DirectoryNode node, long sizeDelta, int fileDelta, int dirDelta) {
+        if (sizeDelta == 0 && fileDelta == 0 && dirDelta == 0) return;
+        var parent = node.getParent();
+        while (parent instanceof DirectoryNode parentNode) {
+            parentNode.addSize(sizeDelta);
+            parentNode.addFiles(fileDelta);
+            parentNode.addDirs(dirDelta);
+            treeModel.nodeChanged(parentNode);
+            parent = parentNode.getParent();
+        }
+    }
+
     private void scanDirectoryProgressive(Path dir, DirectoryNode node) {
         if (Thread.currentThread().isInterrupted()) return;
 
@@ -265,7 +354,11 @@ public class DiskSpaceAnalyzer extends JFrame {
                         scanDirectoryProgressive(child, childNode);
                         if (Thread.currentThread().isInterrupted()) return;
 
-                        synchronized (node) { node.addSize(childNode.getSize()); }
+                        synchronized (node) {
+                            node.addSize(childNode.getSize());
+                            node.addFiles(childNode.getFileCount());
+                            node.addDirs(childNode.getDirectoryCount());
+                        }
                         SwingUtilities.invokeLater(() -> {
                             treeModel.nodeChanged(node);
                             treeModel.nodeChanged(childNode);
@@ -314,9 +407,9 @@ public class DiskSpaceAnalyzer extends JFrame {
         if (selection != null) {
             DirectoryNode node = (DirectoryNode) selection.getLastPathComponent();
             sizeLabel.setText(String.format("Size: %s | Files: %d | Directories: %d",
-                    formatSize(node.getSize()), node.getFileCount(), node.getDirectoryCount()));
+                    SizeFormatter.formatSize(node.getSize()), node.getFileCount(), node.getDirectoryCount()));
         } else if (treeModel != null && treeModel.getRoot() instanceof DirectoryNode root) {
-            sizeLabel.setText("Total: " + formatSize(root.getSize()));
+            sizeLabel.setText("Total: " + SizeFormatter.formatSize(root.getSize()));
         }
     }
 

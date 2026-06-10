@@ -6,7 +6,7 @@ set MAIN=wasootch.discus.Main
 
 if not exist "%OUT%" mkdir "%OUT%"
 
-dir /s /b src\*.java > sources.txt
+dir /s /b src\main\*.java > sources.txt
 javac -d "%OUT%" @sources.txt
 del sources.txt
 
