@@ -2,7 +2,7 @@
 cd /d "%~dp0"
 
 set OUT=out\classes
-set MAIN=wasootch.discus.DiskSpaceAnalyzer
+set MAIN=wasootch.discus.Main
 
 if not exist "%OUT%" mkdir "%OUT%"
 

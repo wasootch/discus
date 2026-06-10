@@ -15,7 +15,6 @@ import javax.swing.JTextField;
 import javax.swing.JTree;
 import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
-import javax.swing.UIManager;
 import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import java.awt.BorderLayout;
@@ -36,9 +35,6 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
-/**
- * Disk Space Analyzer - Visual tool to analyze disk usage by folder
- */
 public class DiskSpaceAnalyzer extends JFrame {
     private static final Logger logger = Logger.getLogger(DiskSpaceAnalyzer.class.getName());
 
@@ -322,17 +318,6 @@ public class DiskSpaceAnalyzer extends JFrame {
         } else if (treeModel != null && treeModel.getRoot() instanceof DirectoryNode root) {
             sizeLabel.setText("Total: " + formatSize(root.getSize()));
         }
-    }
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception e) {
-                logger.log(Level.WARNING, "Could not set system look and feel", e);
-            }
-            new DiskSpaceAnalyzer().setVisible(true);
-        });
     }
 
     @Override
