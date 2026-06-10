@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import static wasootch.discus.DiskSpaceAnalyzer.formatSize;
 
 class SizeTreeCellRenderer extends DefaultTreeCellRenderer {
-    private Font boldFont;
 
     @Override
     public Component getTreeCellRendererComponent(JTree tree, Object value,
@@ -20,18 +19,26 @@ class SizeTreeCellRenderer extends DefaultTreeCellRenderer {
         if (value instanceof DirectoryNode node) {
             Path path = node.getFilePath();
             String name = path.getFileName() != null ? path.getFileName().toString() : path.toString();
-            setText(String.format("%s - %s [%d files, %d dirs]",
-                    name, formatSize(node.getSize()), node.getFileCount(), node.getDirectoryCount()));
 
-            if (boldFont == null) boldFont = getFont().deriveFont(Font.BOLD);
-            setFont(leaf ? getFont() : boldFont);
-
-            if (node.getSize() > 10L * 1024 * 1024 * 1024) {
-                setForeground(new Color(200, 0, 0));
-            } else if (node.getSize() > 1024 * 1024 * 1024) {
-                setForeground(new Color(200, 100, 0));
+            if (node.isScanning()) {
+                setFont(getFont().deriveFont(Font.ITALIC));
+                setText(name + " [scanning...]");
+                setForeground(sel ? getTextSelectionColor() : new Color(0, 100, 200));
+            } else if (!node.isScanned()) {
+                setText(name + " [not scanned]");
+                setForeground(sel ? getTextSelectionColor() : Color.GRAY);
             } else {
-                setForeground(sel ? getTextSelectionColor() : getTextNonSelectionColor());
+                setFont(leaf ? getFont() : getFont().deriveFont(Font.BOLD));
+                setText(String.format("%s - %s [%d files, %d dirs]",
+                        name, formatSize(node.getSize()), node.getFileCount(), node.getDirectoryCount()));
+
+                if (node.getSize() > 10L * 1024 * 1024 * 1024) {
+                    setForeground(new Color(200, 0, 0));
+                } else if (node.getSize() > 1024 * 1024 * 1024) {
+                    setForeground(new Color(200, 100, 0));
+                } else {
+                    setForeground(sel ? getTextSelectionColor() : getTextNonSelectionColor());
+                }
             }
         }
 

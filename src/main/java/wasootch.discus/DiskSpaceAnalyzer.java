@@ -23,21 +23,25 @@ import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 /**
  * Disk Space Analyzer - Visual tool to analyze disk usage by folder
  */
 public class DiskSpaceAnalyzer extends JFrame {
+    private static final Logger logger = Logger.getLogger(DiskSpaceAnalyzer.class.getName());
+
     private JTree tree;
     private DefaultTreeModel treeModel;
     private JLabel statusLabel;
@@ -73,8 +77,9 @@ public class DiskSpaceAnalyzer extends JFrame {
     static String formatSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.2f KB", bytes / 1024.0);
-        if (bytes < 1024 * 1024 * 1024) return String.format("%.2f MB", bytes / (1024.0 * 1024));
-        return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
+        if (bytes < 1024L * 1024 * 1024) return String.format("%.2f MB", bytes / (1024.0 * 1024));
+        if (bytes < 1024L * 1024 * 1024 * 1024) return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
+        return String.format("%.2f TB", bytes / (1024.0 * 1024 * 1024 * 1024));
     }
 
     private void createUI() {
@@ -112,15 +117,6 @@ public class DiskSpaceAnalyzer extends JFrame {
         tree.setRootVisible(true);
         tree.setShowsRootHandles(true);
         tree.addTreeSelectionListener(e -> updateSizeLabel());
-        tree.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 2) {
-                    TreePath path = tree.getPathForLocation(e.getX(), e.getY());
-                    if (path != null) tree.expandPath(path);
-                }
-            }
-        });
 
         JScrollPane scrollPane = new JScrollPane(tree);
         scrollPane.setBorder(BorderFactory.createTitledBorder("Directory Tree"));
@@ -164,7 +160,7 @@ public class DiskSpaceAnalyzer extends JFrame {
         }
     }
 
-    private void populateRoot(String path){
+    private void populateRoot(String path) {
         File dir = new File(path);
         Path dirPath = dir.toPath();
         DirectoryNode root = new DirectoryNode(dirPath);
@@ -172,17 +168,20 @@ public class DiskSpaceAnalyzer extends JFrame {
         tree.setModel(treeModel);
         tree.expandPath(new TreePath(treeModel.getRoot()));
 
-        try (Stream<Path> files = Files.list(dirPath)){
-            files.forEach(child -> {
-                if (Files.isDirectory(child)) {
-                    DirectoryNode childNode = new DirectoryNode(child);
-                    root.add(childNode);
-                    treeModel.nodeStructureChanged(root);
-                }
+        executor.submit(() -> {
+            List<DirectoryNode> children = new ArrayList<>();
+            try (Stream<Path> files = Files.list(dirPath)) {
+                files.filter(Files::isDirectory)
+                     .map(DirectoryNode::new)
+                     .forEach(children::add);
+            } catch (IOException e) {
+                logger.log(Level.WARNING, "Cannot list root directory: " + dirPath, e);
+            }
+            SwingUtilities.invokeLater(() -> {
+                children.forEach(root::add);
+                treeModel.nodeStructureChanged(root);
             });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        });
     }
 
     private void scanDirectory() {
@@ -208,6 +207,7 @@ public class DiskSpaceAnalyzer extends JFrame {
 
         Path dirPath = dir.toPath();
         DirectoryNode root = new DirectoryNode(dirPath);
+        root.markScanning();
         treeModel = new DefaultTreeModel(root);
         tree.setModel(treeModel);
         tree.expandPath(new TreePath(treeModel.getRoot()));
@@ -255,13 +255,14 @@ public class DiskSpaceAnalyzer extends JFrame {
     private void scanDirectoryProgressive(Path dir, DirectoryNode node) {
         if (Thread.currentThread().isInterrupted()) return;
 
-        try (Stream<Path> stream = Files.list(dir).parallel()) {
+        try (Stream<Path> stream = Files.list(dir)) {
             stream.forEach(child -> {
                 if (Thread.currentThread().isInterrupted()) return;
 
                 try {
                     if (Files.isDirectory(child)) {
                         DirectoryNode childNode = new DirectoryNode(child);
+                        childNode.markScanning();
                         synchronized (node) { node.add(childNode); }
                         SwingUtilities.invokeLater(() -> treeModel.nodeStructureChanged(node));
 
@@ -283,21 +284,24 @@ public class DiskSpaceAnalyzer extends JFrame {
                             SwingUtilities.invokeLater(() -> treeModel.nodeChanged(node));
                         }
                     }
-                } catch (Exception ignored) {
-                    // Skip inaccessible files/directories
+                } catch (Exception e) {
+                    logger.log(Level.FINE, "Skipping inaccessible path: " + child, e);
                 }
             });
-        } catch (Exception ignored) {
-            // Skip inaccessible directories
+        } catch (Exception e) {
+            logger.log(Level.FINE, "Cannot list directory: " + dir, e);
         }
 
-        SwingUtilities.invokeLater(() -> treeModel.nodeChanged(node));
+        SwingUtilities.invokeLater(() -> {
+            node.markScanned();
+            treeModel.nodeChanged(node);
+        });
     }
 
     private void cancelScan() {
         if (scanFuture != null && !scanFuture.isDone()) {
             scanFuture.cancel(true);
-            resetScanUI();
+            cancelButton.setEnabled(false);
             statusLabel.setText("Cancelling scan...");
             progressBar.setString("Cancelling...");
         }
@@ -320,12 +324,12 @@ public class DiskSpaceAnalyzer extends JFrame {
         }
     }
 
-    static void main(String[] ignoredArgs) {
+    public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception e) {
-                e.printStackTrace();
+                logger.log(Level.WARNING, "Could not set system look and feel", e);
             }
             new DiskSpaceAnalyzer().setVisible(true);
         });
@@ -333,7 +337,7 @@ public class DiskSpaceAnalyzer extends JFrame {
 
     @Override
     public void dispose() {
-        executor.shutdown();
+        executor.shutdownNow();
         super.dispose();
     }
 }
