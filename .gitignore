@@ -28,6 +28,15 @@ replay_pid*
 *.iml
 out/
 
+# Maven
+target/
+
+# run.bat temporary file (deleted on success, may linger on compile failure)
+sources.txt
+
+# VS Code
+.vscode/
+
 # OS metadata
 .DS_Store
 Thumbs.db
