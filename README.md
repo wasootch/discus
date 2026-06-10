@@ -34,6 +34,21 @@ Compiles sources with `javac` and launches the application.
 mvn test
 ```
 
+## Releasing
+
+Push a version tag to trigger the release workflow, which builds the JAR and publishes it as a GitHub Release:
+
+```bat
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The JAR attached to the release requires Java 16 or later to run:
+
+```bat
+java -jar discus-1.0.0.jar
+```
+
 ## Project structure
 
 ```
